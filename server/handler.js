@@ -1,3 +1,4 @@
+const _ = require('lodash');
 const serverless = require('serverless-http');
 const express = require('express');
 const app = express();
@@ -18,21 +19,33 @@ function getDocClientByIP(ip) {
 }
 
 app.use((req, res, next) => {
-  res.header("Access-Control-Allow-Origin", "*")
+  res.header("Access-Control-Allow-Origin", "*");
   res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
   res.header("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS")
   next()
 });
 
+function convertIdToNumber(article) {
+  article.id = parseInt(article.id, 10);
+  return article;
+}
+
 app.get('/api/articles', (req, res) => {
+
+  const { favorite } = req.query;
 
   const docClient = getDocClientByIP(req.ip);
 
   docClient.scan({
     TableName: 'articles',
-    Limit: 100
   }).promise().then(result => {
-    res.json({ articles: result.Items });
+    let articles = result.Items;
+    articles = articles.map(convertIdToNumber);
+    articles = _.orderBy(articles, ['id'], ['asc']);
+    if (favorite) {
+      articles = articles.filter(x => x.isFavorite);
+    }
+    res.json({ articles });
   });
 });
 
@@ -46,7 +59,9 @@ app.get('/api/articles/:id', (req, res) => {
       id: req.params.id,
     }
   }).promise().then(result => {
-    res.json({ article: result.Item });
+    let article = result.Item;
+    article = convertIdToNumber(article);
+    res.json({ article });
   })
 });
 
@@ -63,9 +78,9 @@ app.put('/api/articles/:id/favorite', (req, res) => {
     ExpressionAttributeValues:{
       ":val": true
     },
-    ReturnValues: "UPDATED_NEW"
+    ReturnValues: "ALL_NEW"
   }).promise().then(result => {
-    res.json(result);
+    res.json(convertIdToNumber(result.Attributes));
   });
 });
 
@@ -82,10 +97,11 @@ app.put('/api/articles/:id/unfavorite', (req, res) => {
     ExpressionAttributeValues:{
       ":val": false
     },
-    ReturnValues: "UPDATED_NEW"
+    ReturnValues: "ALL_NEW"
   }).promise().then(result => {
-    res.json(result);
+    res.json(convertIdToNumber(result.Attributes));
   });
 });
 
 module.exports.main = serverless(app);
+
